@@ -6,8 +6,11 @@
 #include <GCS_MAVLink.h>
 #include "parameter.h"
 #include <avr/pgmspace.h>
+#include "RFM22.h"
 #include "CommCtrlrConfig.h"
 #include "Iridium9602.h"
+#include <stdlib.h>
+#include <SPI.h>
 
 #undef PSTR 
 #define PSTR(s) (__extension__({static const char __c[] PROGMEM = (s); &__c[0];})) 
@@ -109,6 +112,9 @@ byte packetStartByte = 0;  // first byte detected used to store which wrong Mavl
 
 Iridium9602 iridium = Iridium9602(IRIDIUM_SERIAL_PORT);
 
+//Setup radio on SPI with NSEL on pin 8
+rfm22 radio1(8);
+
 // the setup routine runs once when you press reset:
 void setup() { 
   Serial.begin(SERIAL_BAUD);  
@@ -171,4 +177,95 @@ int getInputPWM(int pin) {
     pulseWidthAvg = (pulseWidthAvg*(i-1)+pulseWidth)/i;
   }
   return pulseWidthAvg;
+}
+
+void setupRadio(){
+ 
+  //digitalWrite(5, LOW); //If this pin is connected to the SDN on the radio we want to pull it low first
+ 
+  delay(1000);
+ 
+  rfm22::initSPI();
+ 
+  radio1.init();
+ 
+  radio1.write(0x71, 0x00); // unmodulated carrier
+ 
+  //This sets up the GPIOs to automatically switch the antenna depending on Tx or Rx state, only needs to be done at start up
+  radio1.write(0x0b,0x12);
+  radio1.write(0x0c,0x15);
+ 
+  radio1.setFrequency(434.201);
+ 
+  //Quick test
+  radio1.write(0x07, 0x08); // turn tx on
+  delay(1000);
+  radio1.write(0x07, 0x01); // turn tx off
+ 
+}
+
+// RTTY Functions - from RJHARRISON's AVR Code
+void rtty_txstring (char * string)
+{
+ 
+	/* Simple function to sent a char at a time to 
+	** rtty_txbyte function. 
+	** NB Each char is one byte (8 Bits)
+	*/
+	char c;
+	c = *string++;
+	while ( c != '\0')
+	{
+		rtty_txbyte (c);
+		c = *string++;
+	}
+}
+ 
+void rtty_txbyte (char c)
+{
+	/* Simple function to sent each bit of a char to 
+	** rtty_txbit function. 
+	** NB The bits are sent Least Significant Bit first
+	**
+	** All chars should be preceded with a 0 and 
+	** proceded with a 1. 0 = Start bit; 1 = Stop bit
+	**
+	** ASCII_BIT = 7 or 8 for ASCII-7 / ASCII-8
+	*/
+	int i;
+	rtty_txbit (0); // Start bit
+	// Send bits for for char LSB first	
+	for (i=0;i<8;i++)
+	{
+		if (c & 1) rtty_txbit(1); 
+			else rtty_txbit(0);	
+		c = c >> 1;
+	}
+	rtty_txbit (1); // Stop bit
+        rtty_txbit (1); // Stop bit
+}
+ 
+void rtty_txbit (int bit)
+{
+		if (bit)
+		{
+		  // high
+                  radio1.setFrequency(434.2010);
+		}
+		else
+		{
+		  // low
+                  radio1.setFrequency(434.2015);
+		}
+                delayMicroseconds(19500); // 10000 = 100 BAUD 20150
+ 
+}
+ 
+void rtty_tx(){
+      char superbuffer[80];
+      radio1.write(0x07, 0x08); // turn tx on
+      delay(5000);
+      rtty_txstring("$$$$");
+      rtty_txstring(superbuffer);
+      radio1.write(0x07, 0x01); // turn tx off
 }
