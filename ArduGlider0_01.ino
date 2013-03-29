@@ -8,9 +8,10 @@
 #include <avr/pgmspace.h>
 #include "RFM22.h"
 #include "CommCtrlrConfig.h"
-#include "Iridium9602.h"
+#include "RockBlock.h"
 #include <stdlib.h>
 #include <SPI.h>
+#include <util/crc16.h> //Includes for crc16 cyclic redundancy check to validate serial comms
 
 #undef PSTR 
 #define PSTR(s) (__extension__({static const char __c[] PROGMEM = (s); &__c[0];})) 
@@ -110,7 +111,7 @@ byte wrongMavlinkState = 0; // Check incoming serial seperately from Mavlink lib
                            // if State = 5 we are receiving the wrong Mavlink format
 byte packetStartByte = 0;  // first byte detected used to store which wrong Mavlink was detected 0x55 Mavlink 0.9, 0xFE Mavlink 1.0
 
-Iridium9602 iridium = Iridium9602(IRIDIUM_SERIAL_PORT);
+
 
 //Setup radio on SPI with NSEL on pin 8
 rfm22 radio1(8);
@@ -268,4 +269,11 @@ void rtty_tx(){
       rtty_txstring("$$$$");
       rtty_txstring(superbuffer);
       radio1.write(0x07, 0x01); // turn tx off
+}
+
+uint16_t CRC16 (char *c)
+{
+  uint16_t crc = 0xFFFF;
+  while (*c && *c != '*') crc = _crc_xmodem_update(crc, *c++);
+  return crc;
 }

@@ -9,6 +9,7 @@
 
 #include <string.h>
 #include <SoftwareSerial.h>
+#include "Iridium9602.h"
 
 #define MAX_RECV_BUFFER 100
 

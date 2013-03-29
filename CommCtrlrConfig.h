@@ -1,8 +1,6 @@
 #ifndef CommCtrlrConfig_h
 #define CommCtrlrConfig_h
 
-
-#define __WHITESTARBALLOON__
 #define printExpectings
 #define printVerifiedModemSerialMessages
 
@@ -33,10 +31,7 @@ Global Configuration Information
 #define pinNA 3
 #define pinDSR 6
 #define pinModemPowerSwitch 4
-#define pinBrownout 5
-//define pinVoltageMeasure A0
-const int sda = 18;                                // I2C SDA
-const int scl = 19;                                // I2C SCL
+
 
 /*******************************
  *     Constants for Sat Modem *
