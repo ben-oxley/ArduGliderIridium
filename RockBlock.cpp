@@ -10,7 +10,7 @@
 
 #include "RockBlock.h"
 
-SoftwareSerial rb(RB_RX, RB_TX);
+SoftwareSerial rb(A2,A3);
 Iridium9602 iridium = Iridium9602(rb);
 
 void rockblock_init(){

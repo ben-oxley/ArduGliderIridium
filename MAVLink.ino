@@ -61,6 +61,7 @@ void gcs_handleMessage(mavlink_message_t* msg)
 #ifdef MAVLINK10
       mavlink_gps_raw_int_t packet;
       mavlink_msg_gps_raw_int_decode(msg, &packet);
+      timenow = packet.time_usec/1e3;
       velocity = packet.vel;
       latitude = packet.lat/1e7;
       longitude = packet.lon/1e7;

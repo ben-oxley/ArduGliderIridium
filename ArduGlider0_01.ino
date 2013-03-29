@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <SPI.h>
 #include <util/crc16.h> //Includes for crc16 cyclic redundancy check to validate serial comms
+#include <Time.h>
 
 #undef PSTR 
 #define PSTR(s) (__extension__({static const char __c[] PROGMEM = (s); &__c[0];})) 
@@ -53,8 +54,6 @@ FastSerialPort0(Serial);
 #define RB_MOSI 11
 #define RB_MISO 12
 #define RB_SCK 13
-#define IRIDIUM_SERIAL_PORT satPort
-SoftwareSerial IRIDIUM_SERIAL_PORT(A2,A3);
 #define toRad(x) (x*PI)/180.0
 #define toDeg(x) (x*180.0)/PI
 
@@ -66,6 +65,7 @@ float pitch=0;
 float roll=0;
 float yaw=0;
 float longitude=0;
+time_t timenow;
 float latitude=0;
 float velocity = 0;
 int numSats=0;
@@ -90,6 +90,7 @@ uint8_t received_sysid=0;   ///< ID of heartbeat sender
 uint8_t received_compid=0;  // component id of heartbeat sender
 byte TOTAL_PARAMS = APM_PARAMS; // default total params to ACM set up
 
+
 // Saved time (in msecs) for the last byte read from the serial port
 long lastByteTime = 0;
 uint8_t byt[15]; // Saved received bytes
@@ -111,7 +112,10 @@ byte wrongMavlinkState = 0; // Check incoming serial seperately from Mavlink lib
                            // if State = 5 we are receiving the wrong Mavlink format
 byte packetStartByte = 0;  // first byte detected used to store which wrong Mavlink was detected 0x55 Mavlink 0.9, 0xFE Mavlink 1.0
 
+unsigned int packetNum = 0;
+char packet[100];
 
+uint16_t crc;
 
 //Setup radio on SPI with NSEL on pin 8
 rfm22 radio1(8);
@@ -131,6 +135,7 @@ void loop() {
  digitalWrite(SCK,LOW);
  delay(100);
  recieveTelem();
+ setTime(timenow);
  checkRelease();
 }
 
@@ -178,6 +183,32 @@ int getInputPWM(int pin) {
     pulseWidthAvg = (pulseWidthAvg*(i-1)+pulseWidth)/i;
   }
   return pulseWidthAvg;
+}
+
+void transmit(){
+  
+  packetNum++;
+
+  char slat[10], slon[10], salt[8], sint[6];
+  //ftoa(slat,f_lat,8); 
+  //ftoa(slon,f_lon,8);
+  //f_lat *= 100;
+  //f_lon *= 100;
+  fmtDouble(latitude,6,slat,10);
+  fmtDouble(longitude,6,slon,10);
+  fmtDouble(altitude,6,salt,8);
+  fmtDouble(averageTemperature(),2,sint,6);
+    //int result = sprintf(packet,"$$ALTI,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X,%u*",
+    //packetNum,hour,minutes,second,slat,slon,salt,pressure,v_in,vs_in,sint,stemp,debugmsg,freeMemory());
+    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X*",packetNum,hour(),minute(),second(),slat,slon,salt,sint);
+    crc = (CRC16(&packet[3]));
+    result = sprintf(&packet[result],"%04X\n",crc);
+    //delay(1000);
+    rtty_preamble(1);
+    rtty_tx();
+    //set timers
+    //return
+
 }
 
 void setupRadio(){
@@ -263,11 +294,10 @@ void rtty_txbit (int bit)
 }
  
 void rtty_tx(){
-      char superbuffer[80];
       radio1.write(0x07, 0x08); // turn tx on
       delay(5000);
       rtty_txstring("$$$$");
-      rtty_txstring(superbuffer);
+      rtty_txstring(packet);
       radio1.write(0x07, 0x01); // turn tx off
 }
 
@@ -277,3 +307,149 @@ uint16_t CRC16 (char *c)
   while (*c && *c != '*') crc = _crc_xmodem_update(crc, *c++);
   return crc;
 }
+
+void fmtDouble(double val, byte precision, char *buf, unsigned bufLen = 0xffff);
+unsigned fmtUnsigned(unsigned long val, char *buf, unsigned bufLen = 0xffff, byte width = 0);
+
+//
+// Produce a formatted string in a buffer corresponding to the value provided.
+// If the 'width' parameter is non-zero, the value will be padded with leading
+// zeroes to achieve the specified width.  The number of characters added to
+// the buffer (not including the null termination) is returned.
+//
+unsigned
+fmtUnsigned(unsigned long val, char *buf, unsigned bufLen, byte width)
+{
+  if (!buf || !bufLen)
+    return(0);
+
+  // produce the digit string (backwards in the digit buffer)
+  char dbuf[10];
+  unsigned idx = 0;
+  while (idx < sizeof(dbuf))
+  {
+    dbuf[idx++] = (val % 10) + '0';
+    if ((val /= 10) == 0)
+      break;
+  }
+
+  // copy the optional leading zeroes and digits to the target buffer
+  unsigned len = 0;
+  byte padding = (width > idx) ? width - idx : 0;
+  char c = '0';
+  while ((--bufLen > 0) && (idx || padding))
+  {
+    if (padding)
+      padding--;
+    else
+      c = dbuf[--idx];
+    *buf++ = c;
+    len++;
+  }
+
+  // add the null termination
+  *buf = '\0';
+  return(len);
+}
+
+//
+// Format a floating point value with number of decimal places.
+// The 'precision' parameter is a number from 0 to 6 indicating the desired decimal places.
+// The 'buf' parameter points to a buffer to receive the formatted string.  This must be
+// sufficiently large to contain the resulting string.  The buffer's length may be
+// optionally specified.  If it is given, the maximum length of the generated string
+// will be one less than the specified value.
+//
+// example: fmtDouble(3.1415, 2, buf); // produces 3.14 (two decimal places)
+//
+void
+fmtDouble(double val, byte precision, char *buf, unsigned bufLen)
+{
+  if (!buf || !bufLen)
+    return;
+
+  // limit the precision to the maximum allowed value
+  const byte maxPrecision = 6;
+  if (precision > maxPrecision)
+    precision = maxPrecision;
+
+  if (--bufLen > 0)
+  {
+    // check for a negative value
+    if (val < 0.0)
+    {
+      val = -val;
+      *buf = '-';
+      bufLen--;
+      buf++;
+    }
+
+    // compute the rounding factor and fractional multiplier
+    double roundingFactor = 0.5;
+    unsigned long mult = 1;
+    for (byte i = 0; i < precision; i++)
+    {
+      roundingFactor /= 10.0;
+      mult *= 10;
+    }
+
+    if (bufLen > 0)
+    {
+      // apply the rounding factor
+      val += roundingFactor;
+
+      // add the integral portion to the buffer
+      unsigned len = fmtUnsigned((unsigned long)val, buf, bufLen);
+      buf += len;
+      bufLen -= len;
+    }
+
+    // handle the fractional portion
+    if ((precision > 0) && (bufLen > 0))
+    {
+      *buf++ = '.';
+      if (--bufLen > 0)
+        buf += fmtUnsigned((unsigned long)((val - (unsigned long)val) * mult), buf, bufLen, precision);
+    }
+  }
+
+  // null-terminate the string
+  *buf = '\0';
+}
+
+void rtty_preamble(int baud)
+{
+  char sentence[] = "UUUUUUUU\r\n";
+
+  // Disable interrupts
+  //noInterrupts();
+
+  int i=0;
+  while(sentence[i] != 0)
+  {
+    rtty_txbyte(sentence[i]);
+    i++;
+  }
+
+  // Re-enable interrupts
+  //interrupts();
+}
+
+int readTemperature()
+{
+  ADCSRA |= _BV(ADSC); // start the conversion
+  while (bit_is_set(ADCSRA, ADSC)); // ADSC is cleared when the conversion finishes
+  return (ADCL | (ADCH << 8)) - 342; // combine bytes & correct for temp offset (approximate)
+}
+
+float averageTemperature()
+{
+  analogReference(INTERNAL); //Use internal 1.1V reference voltage
+  ADMUX = 0xC8;
+  readTemperature(); // discard first sample (never hurts to be safe)
+  float averageTemp; // create a float to hold running average
+  for (int i = 1; i < 100; i++) // start at 1 so we dont divide by 0
+    averageTemp += ((readTemperature() - averageTemp)/(float)i); // get next sample, calculate running average
+  //averageTemp *= 100;
+  return averageTemp; // return average temperature reading
+} 
