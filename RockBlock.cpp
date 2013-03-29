@@ -20,8 +20,8 @@ void rockblock_init(){
   if(iridium.isSatAvailable()) Serial.println("RockBlock: Satellite Available.");
   Serial.print("RockBlock: Signal Strength ");
   Serial.println(iridium.checkSignal());
-  unsigned char testmsg[] = "Kraken Initialising.";
-  if(rockblock_sendmsg(&testmsg[0], 20)){
+  unsigned char testmsg[] = "ASTRA Glider Initalising.";
+  if(rockblock_sendmsg(&testmsg[0], sizeof(testmsg)/sizeof(unsigned char))){
       Serial.println("RockBlock: Test message successful.");
   }else{
       Serial.println("RockBlock: Test message unsuccessful.....");
