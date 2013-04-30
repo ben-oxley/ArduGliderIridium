@@ -45,15 +45,9 @@ FastSerialPort0(Serial);
 #define RELEASE 2
 #define ROCKBLOCK_ON 4
 #define ARDUPILOT_ON 3
-#define RB_RTS 5
-#define RB_CTS 6
-#define RB_SLEEP 7
 #define RADIO_EN 8
 #define TELEMETRY 9
 #define REG_N_SHDN 10
-#define RB_MOSI 11
-#define RB_MISO 12
-#define RB_SCK 13
 #define toRad(x) (x*PI)/180.0
 #define toDeg(x) (x*180.0)/PI
 
@@ -116,7 +110,7 @@ unsigned int packetNum = 0;
 char packet[100];
 
 uint16_t crc;
-
+long timer2 = 0;
 //Setup radio on SPI with NSEL on pin 8
 rfm22 radio1(8);
 
@@ -124,19 +118,25 @@ rfm22 radio1(8);
 void setup() { 
   Serial.begin(SERIAL_BAUD);  
   initialisePins(); // initialize the digital pin as an output.
-  delay(10); 
+  delay(10);
   digitalWrite(REG_N_SHDN, HIGH);
   pMosfetOn(ARDUPILOT_ON);
+  pMosfetOn(ROCKBLOCK_ON);
+  // Setup rockblock
+        Serial.println("RB: Starting up");
+        delay(50);
+    rockblock_init();
 }
 // the loop routine runs over and over again forever:
 void loop() {
- digitalWrite(SCK,HIGH); 
- delay(100);
- digitalWrite(SCK,LOW);
- delay(100);
  recieveTelem();
  setTime(timenow);
  checkRelease();
+ if (timer2 - millis() > 60000) {
+   timer2 = millis();
+   Serial.println("Transmitting....");
+   RBtransmit();
+ }
 }
 
 void pMosfetOn(int pin) {
@@ -200,7 +200,7 @@ void transmit(){
   fmtDouble(averageTemperature(),2,sint,6);
     //int result = sprintf(packet,"$$ALTI,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X,%u*",
     //packetNum,hour,minutes,second,slat,slon,salt,pressure,v_in,vs_in,sint,stemp,debugmsg,freeMemory());
-    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X*",packetNum,hour(),minute(),second(),slat,slon,salt,sint);
+    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%s*",packetNum,hour(),minute(),second(),slat,slon,salt,sint);
     crc = (CRC16(&packet[3]));
     result = sprintf(&packet[result],"%04X\n",crc);
     //delay(1000);
@@ -209,6 +209,46 @@ void transmit(){
     //set timers
     //return
 
+}
+
+void RBtransmit(){
+  rockblock_on();
+  packetNum++;
+
+  char slat[10], slon[10], salt[8], sint[6];
+  //ftoa(slat,f_lat,8); 
+  //ftoa(slon,f_lon,8);
+  //f_lat *= 100;
+  //f_lon *= 100;
+  fmtDouble(latitude,6,slat,10);
+  fmtDouble(longitude,6,slon,10);
+  fmtDouble(altitude,6,salt,8);
+  fmtDouble(averageTemperature(),2,sint,6);
+    //int result = sprintf(packet,"$$ALTI,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X,%u*",
+    //packetNum,hour,minutes,second,slat,slon,salt,pressure,v_in,vs_in,sint,stemp,debugmsg,freeMemory());
+    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%s*",packetNum,hour(),minute(),second(),slat,slon,salt,sint);
+    crc = (CRC16(&packet[3]));
+    result = sprintf(&packet[result],"%04X\n",crc);
+    delay(1000);
+    loadMessage((unsigned char*) &packet, sizeof(packet)); //May need sizeof(msg/sizeof(char))
+    //set timers
+    //return
+    uint8_t tries = 0;
+    bool success = false;
+    while (tries < 5 && !success) {
+        if (tries > 0) {
+            Serial.println("RB: Retry session in 1 min");
+            delay(10000);
+        }
+        success = initiateSession();
+        tries++;
+    }
+     if (messageSent()) {
+            Serial.println("RB: Sent");
+    } else {
+            Serial.println("RB: Not sent");
+    }
+    rockblock_off();
 }
 
 void setupRadio(){
