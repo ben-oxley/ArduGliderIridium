@@ -1,3 +1,22 @@
+/*
+Software by Ben Oxley for GDP 16, 2013 please see http://www.benoxley.co.uk
+The software is designed to be used on a custom PCB designed for the project
+please see http://www.github.com/ben-oxley for more information about the 
+PCB and code base.
+
+The PCB undertakes the following functions:
+
+Automatically switching between power supplies
+Managing the Ardupilot and RockBlock Modem
+Interfacing with the Ardupilot modem to contact the Iridium Satellite Network
+Entering a low power mode during drifting state to preserve power
+Using the RFM22B radio for long-range communications
+Communicating with the Ardupilot using the MAVLink messaging protocol
+Breaks out the connections from the Ardupilot to the external servo connections
+Controls the cutdown mechanism on the device
+
+*/
+
 #define MAVLINK10
 #define DEBUG
 
@@ -67,7 +86,7 @@ float battery=0;
 int currentSMode=0;
 int currentNMode=0;
 int gpsfix=0;
-
+int state = 0;
 
 //SoftwareSerial TelemetryRx(A1,A2);
 
@@ -107,7 +126,7 @@ byte wrongMavlinkState = 0; // Check incoming serial seperately from Mavlink lib
 byte packetStartByte = 0;  // first byte detected used to store which wrong Mavlink was detected 0x55 Mavlink 0.9, 0xFE Mavlink 1.0
 
 unsigned int packetNum = 0;
-char packet[100];
+char packet[60];
 
 uint16_t crc;
 long timer2 = 0;
@@ -126,18 +145,53 @@ void setup() {
         Serial.println("RB: Starting up");
         delay(50);
     rockblock_init();
+    
+  //wait for GPS fix from ardupilot packet before continuing
+  //calibrate ground height
+  //delay for the amount of time needed to turn on ardupilot
+   
 }
 // the loop routine runs over and over again forever:
 void loop() {
+ delay(10000);
  recieveTelem();
+ //Only use setTime once, once lock is achieved. But every time after returning from sleep.
  setTime(timenow);
+ /*
+ if (state == 1 ) { // ascending
+ 
+ }
+ if (state == 2 ) { // released
+   
+ }
+ if (state == 3 ) { //landed
+   
+ }
+ */
  checkRelease();
- if (timer2 - millis() > 60000) {
+ if (millis() - timer2  > 60000) {
    timer2 = millis();
    Serial.println("Transmitting....");
    RBtransmit();
  }
 }
+
+
+/*
+void determineStage() {
+ //Wait for GPS lock, get altitude, set as base height.
+ if (state == 0) {
+   //calibrate altitude
+ }
+ else if (state == 1 ) { // ascending
+   if (altitude >= (400+initialheight)) state = 1;
+   return;
+ }
+ else if (state == 2 ) { // released
+   //If altitude stays stable and is at least 40m lower than 400+initialheight then go to state 3
+ }
+}
+*/
 
 void pMosfetOn(int pin) {
   pinMode(pin,INPUT);
@@ -230,7 +284,7 @@ void RBtransmit(){
     crc = (CRC16(&packet[3]));
     result = sprintf(&packet[result],"%04X\n",crc);
     delay(1000);
-    loadMessage((unsigned char*) &packet, sizeof(packet)); //May need sizeof(msg/sizeof(char))
+    loadMessage((unsigned char*) &packet, sizeof(packet)/sizeof(char)); //May need sizeof(msg/sizeof(char))
     //set timers
     //return
     uint8_t tries = 0;
@@ -238,7 +292,7 @@ void RBtransmit(){
     while (tries < 5 && !success) {
         if (tries > 0) {
             Serial.println("RB: Retry session in 1 min");
-            delay(10000);
+            delay(60000);
         }
         success = initiateSession();
         tries++;

@@ -10,7 +10,7 @@
 
 #include "RockBlock.h"
 
-SoftwareSerial rb(A3, A2);
+SoftwareSerial rb(A2, A3);
 char receivedCmd[100];
 int receivedIdx;
 bool ring;
@@ -23,8 +23,10 @@ int netQueue;
 
 
 void rockblock_init() {
+    rb.begin(19200);
     pinMode(RB_SLEEP, OUTPUT);
     rockblock_off();
+   
     
 }
 
@@ -46,7 +48,7 @@ void rockblock_on() {
         Serial.println("RB: Turning Sat Modem On...");
 
     
-    delay(100);
+    delay(1000);
     while(!sendCommandandExpectPrefix("AT", "OK", 500)){}
 
         Serial.println("RB: Responding");
@@ -214,7 +216,6 @@ void parseSBDIX(){
 
 bool sendCommandandExpectPrefix(const char * command, const char * response, unsigned long timeout) {
     sendCommand(command);
-    Serial.println("Command sent, waiting for response");
     return expectResponse(response, timeout);
 }
 
@@ -265,7 +266,7 @@ bool receiveCmdCRLF(unsigned long timeout){
                 while(receivedCmd[receivedIdx-1] == '\r' || receivedCmd[receivedIdx-1] == '\n'){
                     receivedCmd[--receivedIdx] = '\0';
                 }
-                Serial.println(receivedCmd);
+                //Serial.println(receivedCmd);
                 return true;
             }
         }
