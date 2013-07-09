@@ -32,6 +32,7 @@ Controls the cutdown mechanism on the device
 #include <SPI.h>
 #include <util/crc16.h> //Includes for crc16 cyclic redundancy check to validate serial comms
 #include <Time.h>
+//#include <narcoleptic.h>
 
 #undef PSTR 
 #define PSTR(s) (__extension__({static const char __c[] PROGMEM = (s); &__c[0];})) 
@@ -87,6 +88,9 @@ int currentSMode=0;
 int currentNMode=0;
 int gpsfix=0;
 int state = 0;
+
+int groundheight=0;
+int maxheight=0;
 
 //SoftwareSerial TelemetryRx(A1,A2);
 
@@ -145,53 +149,93 @@ void setup() {
         Serial.println("RB: Starting up");
         delay(50);
     rockblock_init();
-    
-  //wait for GPS fix from ardupilot packet before continuing
   //calibrate ground height
   //delay for the amount of time needed to turn on ardupilot
+  while (gpsfix != 3) {
+   recieveTelem();
+  }
+    //3 is 3D position and 2 is 2D position, 0 or 1 can be no fix.
+  //wait for GPS fix from ardupilot packet before continuing
+  for (int i = 0; i < 3; i++) {
+    groundheight += altitude;
+    delay(1000);
+    recieveTelem();
+  }
+  groundheight /= (int)3;
+  //Only use setTime once, once lock is achieved. But every time after returning from sleep.
+  setTime(timenow);
+
    
 }
 // the loop routine runs over and over again forever:
 void loop() {
- delay(10000);
- recieveTelem();
- //Only use setTime once, once lock is achieved. But every time after returning from sleep.
- setTime(timenow);
+ determineStage();
  /*
+ if (state == 0 ) { //not yet launched
+   
+ }
  if (state == 1 ) { // ascending
- 
+   //No Rockblock transmit
  }
  if (state == 2 ) { // released
    
  }
  if (state == 3 ) { //landed
-   
+   //Only use setTime once, once lock is achieved. But every time after returning from sleep.
+   if (millis() - timer2  > 60000) {
+     timer2 = millis();
+     Serial.println("Transmitting....");
+     RBtransmit();
+   }
  }
  */
- checkRelease();
- if (millis() - timer2  > 60000) {
-   timer2 = millis();
-   Serial.println("Transmitting....");
-   RBtransmit();
- }
+ //checkRelease();
+
 }
 
 
-/*
+
 void determineStage() {
+ recieveTelem();
  //Wait for GPS lock, get altitude, set as base height.
  if (state == 0) {
-   //calibrate altitude
+   if (altitude >= (20 + groundheight)) state = 1;
  }
  else if (state == 1 ) { // ascending
-   if (altitude >= (400+initialheight)) state = 1;
-   return;
+  if ((altitude + 20 ) <= maxheight) state = 2;
  }
  else if (state == 2 ) { // released
+   if (altitude <= 10) state = 3; 
+   int measureA, measureB;
+   if (altitude + 100 <= maxheight) {
+     if (velocityAverage(2,1000) == 0) state = 3;
+   }
    //If altitude stays stable and is at least 40m lower than 400+initialheight then go to state 3
  }
 }
-*/
+
+
+int altitudeAverage(int repeats, int delayTime) {
+  long avg;
+  for (int i = 0; i < repeats; i++) {
+      recieveTelem();
+      avg += altitude;
+      delay(delayTime);
+  }
+  avg /= repeats;
+  return (int)avg;
+}
+
+int velocityAverage(int repeats, int delayTime) {
+  long avg;
+  for (int i = 0; i < repeats; i++) {
+      recieveTelem();
+      avg += velocity;
+      delay(delayTime);
+  }
+  avg /= repeats;
+  return (int)avg;
+}
 
 void pMosfetOn(int pin) {
   pinMode(pin,INPUT);
@@ -211,6 +255,7 @@ void initialisePins() {
 
 int recieveTelem() {
   gcs_update();
+  if (altitude > maxheight) altitude = maxheight;
 #ifdef DEBUG
   Serial.print("Pitch: ");
   Serial.print(pitch);
