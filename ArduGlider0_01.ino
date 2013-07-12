@@ -32,7 +32,7 @@ Controls the cutdown mechanism on the device
 #include <SPI.h>
 #include <util/crc16.h> //Includes for crc16 cyclic redundancy check to validate serial comms
 #include <Time.h>
-//#include <narcoleptic.h>
+#include <LowPower.h>
 
 #undef PSTR 
 #define PSTR(s) (__extension__({static const char __c[] PROGMEM = (s); &__c[0];})) 
@@ -164,14 +164,14 @@ void setup() {
   groundheight /= (int)3;
   //Only use setTime once, once lock is achieved. But every time after returning from sleep.
   setTime(timenow);
-
+  
    
 }
 // the loop routine runs over and over again forever:
 void loop() {
  determineStage();
- /*
  if (state == 0 ) { //not yet launched
+   RBtransmit();
    
  }
  if (state == 1 ) { // ascending
@@ -181,14 +181,23 @@ void loop() {
    
  }
  if (state == 3 ) { //landed
+   pMosfetOn(ARDUPILOT_ON);
+   pMosfetOn(ROCKBLOCK_ON);
+   while (gpsfix != 3) {
+     recieveTelem();
+   }
    //Only use setTime once, once lock is achieved. But every time after returning from sleep.
    if (millis() - timer2  > 60000) {
      timer2 = millis();
      Serial.println("Transmitting....");
      RBtransmit();
    }
+   pMosfetOff(ARDUPILOT_ON);
+   pMosfetOff(ROCKBLOCK_ON);
+   for (int i = 0; i< 15*59; i++) { //59 as it takes a minute to transmit probably.
+     LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF); //- See more at: http://www.rocketscream.com/blog/2011/07/04/lightweight-low-power-arduino-library/#sthash.nRVX6iRi.dpuf
+   }
  }
- */
  //checkRelease();
 
 }
@@ -239,6 +248,11 @@ int velocityAverage(int repeats, int delayTime) {
 
 void pMosfetOn(int pin) {
   pinMode(pin,INPUT);
+}
+
+void pMosfetOff(int pin) {
+  pinMode(pin,OUTPUT);
+  digitalWrite(pin,LOW);
 }
 
 void initialisePins() {
