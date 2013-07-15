@@ -87,7 +87,7 @@ float battery=0;
 int currentSMode=0;
 int currentNMode=0;
 int gpsfix=0;
-int state = 0;
+int state = 0; //Change before plane launch
 
 int groundheight=0;
 int maxheight=0;
@@ -130,7 +130,7 @@ byte wrongMavlinkState = 0; // Check incoming serial seperately from Mavlink lib
 byte packetStartByte = 0;  // first byte detected used to store which wrong Mavlink was detected 0x55 Mavlink 0.9, 0xFE Mavlink 1.0
 
 unsigned int packetNum = 0;
-char packet[60];
+char packet[80];
 
 uint16_t crc;
 long timer2 = 0;
@@ -154,6 +154,7 @@ void setup() {
   while (gpsfix != 3) {
    recieveTelem();
   }
+  Serial.println("Found position, averaging height.");
     //3 is 3D position and 2 is 2D position, 0 or 1 can be no fix.
   //wait for GPS fix from ardupilot packet before continuing
   for (int i = 0; i < 3; i++) {
@@ -161,6 +162,7 @@ void setup() {
     delay(1000);
     recieveTelem();
   }
+  Serial.println("Groundheight averaged, hurray! Let's carry on.");
   groundheight /= (int)3;
   //Only use setTime once, once lock is achieved. But every time after returning from sleep.
   setTime(timenow);
@@ -177,26 +179,33 @@ void loop() {
  if (state == 1 ) { // ascending
    //No Rockblock transmit
  }
- if (state == 2 ) { // released
+ if (state == 2 ) { // released9
    
  }
  if (state == 3 ) { //landed
    pMosfetOn(ARDUPILOT_ON);
    pMosfetOn(ROCKBLOCK_ON);
+   gpsfix = 0;
    while (gpsfix != 3) {
      recieveTelem();
    }
+   Serial.println("Found position.");
    //Only use setTime once, once lock is achieved. But every time after returning from sleep.
-   if (millis() - timer2  > 60000) {
-     timer2 = millis();
+   //if (millis() - timer2  > 600000) {
+     //timer2 = millis();
+     pMosfetOff(ARDUPILOT_ON);
      Serial.println("Transmitting....");
      RBtransmit();
-   }
-   pMosfetOff(ARDUPILOT_ON);
+   //}
+   digitalWrite(REG_N_SHDN, LOW);
    pMosfetOff(ROCKBLOCK_ON);
-   for (int i = 0; i< 15*59; i++) { //59 as it takes a minute to transmit probably.
+   Serial.println("Going to sleep.");
+   delay(50);
+   for (int i = 0; i< 15*13; i++) { //59 as it takes a minute to transmit probably.
      LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF); //- See more at: http://www.rocketscream.com/blog/2011/07/04/lightweight-low-power-arduino-library/#sthash.nRVX6iRi.dpuf
    }
+   Serial.println("Yawn, waking up.");
+   digitalWrite(REG_N_SHDN, HIGH);
  }
  //checkRelease();
 
@@ -346,14 +355,17 @@ void RBtransmit(){
     loadMessage((unsigned char*) &packet, sizeof(packet)/sizeof(char)); //May need sizeof(msg/sizeof(char))
     //set timers
     //return
+    int sigStrength = -231; //Initiated with random number to prove returned strength is correct.
     uint8_t tries = 0;
     bool success = false;
     while (tries < 5 && !success) {
         if (tries > 0) {
-            Serial.println("RB: Retry session in 1 min");
+            Serial.print("RB: Retry session in 1 min, signal strength is: ");
+            Serial.println(sigStrength);
             delay(60000);
         }
         success = initiateSession();
+        sigStrength = checkSignal();
         tries++;
     }
      if (messageSent()) {
