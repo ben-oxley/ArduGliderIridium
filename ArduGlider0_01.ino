@@ -91,7 +91,6 @@ int state = 0; //Change before plane launch
 
 int groundheight=0;
 int maxheight=0;
-
 //SoftwareSerial TelemetryRx(A1,A2);
 
 // Check for 3 valid heartbeats and shut down wrong Mavlink type
@@ -166,20 +165,19 @@ void setup() {
   groundheight /= (int)3;
   //Only use setTime once, once lock is achieved. But every time after returning from sleep.
   setTime(timenow);
-  
+   RBtransmit();
    
 }
 // the loop routine runs over and over again forever:
 void loop() {
  determineStage();
  if (state == 0 ) { //not yet launched
-   RBtransmit();
-   
+
  }
  if (state == 1 ) { // ascending
    //No Rockblock transmit
  }
- if (state == 2 ) { // released9
+ if (state == 2 ) { // released
    
  }
  if (state == 3 ) { //landed
@@ -197,7 +195,7 @@ void loop() {
      Serial.println("Transmitting....");
      RBtransmit();
    //}
-   digitalWrite(REG_N_SHDN, LOW);
+   //digitalWrite(REG_N_SHDN, LOW);
    pMosfetOff(ROCKBLOCK_ON);
    Serial.println("Going to sleep.");
    delay(50);
@@ -223,9 +221,8 @@ void determineStage() {
   if ((altitude + 20 ) <= maxheight) state = 2;
  }
  else if (state == 2 ) { // released
-   if (altitude <= 10) state = 3; 
-   int measureA, measureB;
-   if (altitude + 100 <= maxheight) {
+   if (altitude <= (10 + groundheight)) state = 3; 
+   if (altitude + 20 <= maxheight) {
      if (velocityAverage(2,1000) == 0) state = 3;
    }
    //If altitude stays stable and is at least 40m lower than 400+initialheight then go to state 3
@@ -322,7 +319,7 @@ void transmit(){
   fmtDouble(averageTemperature(),2,sint,6);
     //int result = sprintf(packet,"$$ALTI,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X,%u*",
     //packetNum,hour,minutes,second,slat,slon,salt,pressure,v_in,vs_in,sint,stemp,debugmsg,freeMemory());
-    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%s*",packetNum,hour(),minute(),second(),slat,slon,salt,sint);
+    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%s,%u*",packetNum,hour(),minute(),second(),slat,slon,salt,sint,state);
     crc = (CRC16(&packet[3]));
     result = sprintf(&packet[result],"%04X\n",crc);
     //delay(1000);
@@ -348,7 +345,7 @@ void RBtransmit(){
   fmtDouble(averageTemperature(),2,sint,6);
     //int result = sprintf(packet,"$$ALTI,%u,%02u:%02u:%02u,%s,%s,%s,%d,%d,%d,%s,%s,%X,%u*",
     //packetNum,hour,minutes,second,slat,slon,salt,pressure,v_in,vs_in,sint,stemp,debugmsg,freeMemory());
-    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%s*",packetNum,hour(),minute(),second(),slat,slon,salt,sint);
+    int result = sprintf(packet,"$$ASTRA,%u,%02u:%02u:%02u,%s,%s,%s,%s,%u,%u*",packetNum,hour(),minute(),second(),slat,slon,salt,sint,state,checkSignal());
     crc = (CRC16(&packet[3]));
     result = sprintf(&packet[result],"%04X\n",crc);
     delay(1000);
